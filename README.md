@@ -1,5 +1,93 @@
 # Azure Relay Bridge
 
+The original README file can be found below.
+
+## Notes specific for CWS
+
+This project is used for remote development scenarios where you need access to an on-premises resource but you are unable to connect to ports that do not route over VPN. This will forward ANY port on your local development workstation to ANY system behind the firewall using Azure Service Bus Relay. You will need to do three things:
+
+1. Setup a hybrid connection in a Relay namespace in the Azure Portal
+2. Run azbridge *inside* the firewall
+3. Run azbridge on your local development machine *outside* the firewall
+
+Please be aware that this is not free. Each relay endpoint costs about $10/month, plus $1/GB (over 5GB). Use your Azure credits associated with your Visual Studio Enterprise subscription (up to $150) to minimize costs.
+
+## Building
+
+### Prerequisites
+
+* [.NET 6](https://dotnet.microsoft.com/en-us/download/dotnet/6.0)
+* [PowerShell 7](https://github.com/PowerShell/PowerShell/releases)
+
+If you're building on macOS, you must install the .NET 6 SDK and PowerShell 7 first. Windows users can just install the .NET 6 SDK.
+
+Run `.\build.ps1`. It will output three executables to the `build` folder, one for each of the follow platforms: Windows 64-bit (win-x64), Apple 64-bit (osx-arm64), Apple Intel 64-bit (osx-x64).
+
+## Running
+
+Let's say you want access to an Oracle database with the following connection string:
+
+    (DESCRIPTION=(ADDRESS_LIST=(ADDRESS=(PROTOCOL=TCP)(HOST=oracle19cdev.usa.org)(PORT=1521)))(CONNECT_DATA=(SERVICE_NAME=rangdevdb.usa.org)));User ID=rserv;Password=***
+
+## Setup a hybrid connection
+
+1. Create a Relay namespace in the Azure Portal. It should be located in the **West US** location. We'll use an example namespace of **cwsoradevbridge**, but you should choose your own unique name.
+
+2. Create two shared access policies for the namespace as follows:
+
+Name    | Claims
+------- | ------
+private | Send, Listen
+public  | Send
+
+For each shared access policy, make a note of the primary key. You'll need it later to create configuration files.
+
+3. Create a Hybrid Connection entity. We'll use the name **rangdevdb** as an example below. Leave *Requires Client Authorization* checked. 
+
+## Run azbridge inside, behind the firewall
+
+You'll need to setup a YAML configuration file for azbridge, such as the example below. We'll use the file name `rangdevdb-inside.yml`, but call yours whatever you like. You will need to replace the following keys: AzureRelayEndpoint, AzureRelaySharedAccessKey,RelayName, Host and HostPort
+
+    AzureRelayEndpoint : sb://cwsoradevbridge.servicebus.windows.net/
+    AzureRelaySharedAccessKeyName : private
+    AzureRelaySharedAccessKey : Xn1IJWUqMSl7JStQMjtTeGxiLWVPQnB4NjdaaWZYLFM=
+    LogLevel : ERROR
+    RemoteForward :
+      - RelayName: rangdevdb
+        Host: oracle19cdev.usa.org
+        HostPort: 1521
+
+Run `.\azbridge.exe -f rangdevdb-inside.yml`.
+
+This will establish a connection between the on-premises host and port to the Azure Relay. Remember, this must be run on a workstation or server behind the firewall! The host and port must be accessible to the azbridge process.
+
+## Run azbridge outside, on your workstation
+
+This is very similar to setting up the inside connection. Create a YAML configuration file and replace the following keys: AzureRelayEndpoint, AzureRelaySharedAccessKey,RelayName, and BindPort. We'll use `rangdevdb-outside.yml` in the example below.
+
+    AzureRelayEndpoint : sb://cwsoradevbridge.servicebus.windows.net/
+    AzureRelaySharedAccessKeyName : public
+    AzureRelaySharedAccessKey : SEBJfGJCIC1id0M7S3h5d1pXRmh4MHdiNyFYfW5wUzR=
+    LogLevel : ERROR
+    LocalForward :
+        RelayName: rangdevdb
+      - BindAddress: localhost
+        BindPort: 1521
+
+Run `.\azbridge -f rangdevdb-outside.yml`
+
+This will establish a connection between your local development machine and the Azure Relay. In the example above, you can now connect to port 1521 on localhost and all packets will be forwarded over the relay, behind the firewall to **oracle19cdev.usa.org**.
+
+## Modify local configuration files
+
+You'll need to alter the Oracle connection string slightly to connect to localhost, rather than the database host. For example:
+
+    (DESCRIPTION=(ADDRESS_LIST=(ADDRESS=(PROTOCOL=TCP)(HOST=localhost)(PORT=1521)))(CONNECT_DATA=(SERVICE_NAME=rangdevdb.usa.org)));User ID=rserv;Password=***
+
+That's it! Make sure you shutdown your azbridge processes when you're done.
+
+## Original README
+
 [![Build Status](https://clemensv.visualstudio.com/azure-relay-bridge/_apis/build/status/clemensv.azure-relay-bridge?branchName=master)](https://clemensv.visualstudio.com/azure-relay-bridge/_build/latest?definitionId=1&branchName=master)
 
 > _NOTE: This is an unsupported tool that is provided as-is. Azure product support is not available. Any issues must be filed here and there is no guaranteed reaction time for addressing any such issues._
